@@ -20,3 +20,10 @@ static mut LOC: i64 = 0;
 static mut LINE: i64 = 0;    
 static mut SRC: i64 = 0;    
 static mut DEBUG: i64 = 0;  
+
+enum Token {
+    Num = 128, Fun, Sys, Glo, Loc, Id,
+    Char, Else, Enum, If, Int, Return, Sizeof, While,
+    Assign, Cond, Lor, Lan, Or, Xor, And, Eq, Ne, Lt, Gt, Le, Ge, Shl, Shr,
+    Add, Sub, Mul, Div, Mod, Inc, Dec, Brak,
+}

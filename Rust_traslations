@@ -1,0 +1,22 @@
+use std::ptr;
+use std::mem;
+use std::fs::File;
+use std::io::{self, Read};
+use std::os::unix::io::AsRawFd;
+
+static mut P: *mut u8 = ptr::null_mut();     
+static mut LP: *mut u8 = ptr::null_mut();    
+static mut DATA: *mut u8 = ptr::null_mut(); 
+
+static mut E: *mut i64 = ptr::null_mut();   
+static mut LE: *mut i64 = ptr::null_mut();   
+static mut ID: *mut i64 = ptr::null_mut();   
+static mut SYM: *mut i64 = ptr::null_mut();  
+
+static mut TK: i64 = 0;      
+static mut IVAL: i64 = 0;    
+static mut TY: i64 = 0;     
+static mut LOC: i64 = 0;    
+static mut LINE: i64 = 0;    
+static mut SRC: i64 = 0;    
+static mut DEBUG: i64 = 0;  

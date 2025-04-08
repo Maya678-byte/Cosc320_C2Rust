@@ -4,6 +4,8 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::os::unix::io::AsRawFd;
 
+//Initializations
+
 static mut P: *mut u8 = ptr::null_mut();     
 static mut LP: *mut u8 = ptr::null_mut();    
 static mut DATA: *mut u8 = ptr::null_mut(); 

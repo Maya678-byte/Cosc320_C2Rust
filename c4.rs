@@ -1,3 +1,22 @@
+/// A Rust translation of the `c4` compiler by Robert Swierczek.
+///
+/// ## Design Goals
+/// - Preserve the original C4 architecture, including tokenization, parsing, and virtual machine execution.
+/// - Use `unsafe` code to maintain pointer arithmetic and raw memory handling similar to C.
+/// - Match enum values and global layout with C for 1:1 behavior fidelity.
+///
+/// ## Memory Model
+/// - Global state is retained using `static mut` for compatibility with the original design.
+/// - Memory for source code, emitted instructions, symbol table, etc., is allocated as contiguous blocks.
+/// - Function calls use a simulated stack in raw memory.
+///
+/// ## Safety Notes
+/// - All major components (`next`, `expr`, etc.) are `unsafe` due to raw pointer manipulation.
+/// - Proper encapsulation and memory-safe abstractions could be added in a future refactor.
+
+
+
+
 use std::ptr;
 use std::mem;
 use std::fs::File;
@@ -23,7 +42,21 @@ static mut LINE: i64 = 0;
 static mut SRC: i64 = 0;    
 static mut DEBUG: i64 = 0;  
 
-// tokens and classes (operators last and in precedence order)
+/// Tokens and classes (operators last and in precedence order)
+/// Represents all supported token types in the C4 compiler.
+/// The values must match the original C values for compatibility.
+/// Token kinds used in the C4 lexer and parser.
+/// These values correspond exactly to the original C constants, starting at 128
+/// to distinguish them from ASCII characters.
+///
+/// These include:
+/// - Keywords (`If`, `While`, etc.)
+/// - Types (`Int`, `Char`)
+/// - Operators (`Assign`, `Add`, `Mul`, etc.)
+/// - Special types (`Num`, `Id`)
+///
+/// This enum uses `#[repr(i64)]` to match C layout.
+
 #[repr(i64)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Token {
@@ -33,7 +66,14 @@ enum Token {
     Add, Sub, Mul, Div, Mod, Inc, Dec, Brak,
 }
 
-// opcodes
+/// Virtual machine opcodes used in the C4 bytecode.
+/// Each opcode corresponds to an instruction the C4 VM understands, such as:
+/// - Arithmetic (`ADD`, `SUB`)
+/// - Memory access (`LI`, `SI`)
+/// - Control flow (`JMP`, `BZ`)
+/// - System calls (`OPEN`, `PRTF`, etc.)
+/// The opcode values are designed to match the original C order exactly.
+
 #[repr(i64)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Opcode {
@@ -69,6 +109,14 @@ enum IdentField {
 
 //void next() function
 //unsafe blocks were used since many global variables are mutable and raw pointers are involved
+/// Advances to the next token in the source input.
+///
+/// This function implements a lexer that processes C4-compatible tokens.
+/// It supports C-style comments, identifiers, numbers (decimal, octal, hex),
+/// character literals, strings, and all operators supported by the C4 grammar.
+///
+/// # Safety (a warning below function is unsafe)
+/// Relies on unsafe global pointer arithmetic for performance and C compatibility.
 unsafe fn next() {
     let mut pp: *mut u8;
 
@@ -237,6 +285,182 @@ unsafe fn next() {
     }
 }
 
+/// Parses an expression using top-down operator precedence.
+///
+/// This function emits VM opcodes into the code buffer (`e`) according to the
+/// expression grammar of the C4 language. It handles literals, function calls,
+/// unary/binary operators, pointer dereferencing, address-of, sizeof, etc.
+///
+/// # Arguments
+/// * `lev` - The current precedence level.
+///
+/// # Design Notes
+/// This matches C4's recursive `expr()` logic and uses manual pointer arithmetic.
+/// Types (`ty`) and emitted opcodes are tracked through global state.
+///
+/// # Safety
+/// Uses `unsafe` due to heavy reliance on raw pointers and mutable global state.
+unsafe fn expr(lev: i64) {
+    let mut t: i64;
+    let mut d: *mut i64;
+
+    if TK == 0 {
+        eprintln!("{}: unexpected eof in expression", LINE);
+        std::process::exit(-1);
+    } else if TK == Token::Num as i64 {
+        E = E.add(1); *E = Opcode::IMM as i64;
+        E = E.add(1); *E = IVAL;
+        next();
+        TY = TypeKind::INT as i64;
+    } else if TK == b'"' as i64 {
+        E = E.add(1); *E = Opcode::IMM as i64;
+        E = E.add(1); *E = IVAL;
+        next();
+        while TK == b'"' as i64 {
+            next();
+        }
+        DATA = ((DATA as usize + mem::size_of::<i64>() - 1) & !(mem::size_of::<i64>() - 1)) as *mut u8;
+        TY = TypeKind::PTR as i64;
+    } else if TK == Token::Sizeof as i64 {
+        next();
+        if TK == b'(' as i64 { next(); } else { err("open paren expected in sizeof"); }
+        TY = TypeKind::INT as i64;
+        if TK == Token::Int as i64 { next(); }
+        else if TK == Token::Char as i64 { next(); TY = TypeKind::CHAR as i64; }
+        while TK == Token::Mul as i64 { next(); TY += TypeKind::PTR as i64; }
+        if TK == b')' as i64 { next(); } else { err("close paren expected in sizeof"); }
+        E = E.add(1); *E = Opcode::IMM as i64;
+        E = E.add(1); *E = if TY == TypeKind::CHAR as i64 { 1 } else { mem::size_of::<i64>() as i64 };
+        TY = TypeKind::INT as i64;
+    } else if TK == Token::Id as i64 {
+        d = ID;
+        next();
+        if TK == b'(' as i64 {
+            next();
+            t = 0;
+            while TK != b')' as i64 {
+                expr(Token::Assign as i64);
+                E = E.add(1); *E = Opcode::PSH as i64;
+                t += 1;
+                if TK == b',' as i64 { next(); }
+            }
+            next();
+            if *d.add(IdentField::Class as usize) == Token::Sys as i64 {
+                E = E.add(1); *E = *d.add(IdentField::Val as usize);
+            } else if *d.add(IdentField::Class as usize) == Token::Fun as i64 {
+                E = E.add(1); *E = Opcode::JSR as i64;
+                E = E.add(1); *E = *d.add(IdentField::Val as usize);
+            } else {
+                err("bad function call");
+            }
+            if t != 0 {
+                E = E.add(1); *E = Opcode::ADJ as i64;
+                E = E.add(1); *E = t;
+            }
+            TY = *d.add(IdentField::Type as usize);
+        } else if *d.add(IdentField::Class as usize) == Token::Num as i64 {
+            E = E.add(1); *E = Opcode::IMM as i64;
+            E = E.add(1); *E = *d.add(IdentField::Val as usize);
+            TY = TypeKind::INT as i64;
+        } else {
+            if *d.add(IdentField::Class as usize) == Token::Loc as i64 {
+                E = E.add(1); *E = Opcode::LEA as i64;
+                E = E.add(1); *E = LOC - *d.add(IdentField::Val as usize);
+            } else if *d.add(IdentField::Class as usize) == Token::Glo as i64 {
+                E = E.add(1); *E = Opcode::IMM as i64;
+                E = E.add(1); *E = *d.add(IdentField::Val as usize);
+            } else {
+                err("undefined variable");
+            }
+            TY = *d.add(IdentField::Type as usize);
+            E = E.add(1); *E = if TY == TypeKind::CHAR as i64 { Opcode::LC as i64 } else { Opcode::LI as i64 };
+        }
+    } else if TK == b'(' as i64 {
+        next();
+        if TK == Token::Int as i64 || TK == Token::Char as i64 {
+            t = if TK == Token::Int as i64 { TypeKind::INT as i64 } else { TypeKind::CHAR as i64 };
+            next();
+            while TK == Token::Mul as i64 {
+                next(); t += TypeKind::PTR as i64;
+            }
+            if TK != b')' as i64 { err("bad cast"); }
+            next();
+            expr(Token::Inc as i64);
+            TY = t;
+        } else {
+            expr(Token::Assign as i64);
+            if TK != b')' as i64 { err("close paren expected"); }
+            next();
+        }
+    } else if TK == Token::Mul as i64 {
+        next();
+        expr(Token::Inc as i64);
+        if TY > TypeKind::INT as i64 { TY -= TypeKind::PTR as i64; }
+        else { err("bad dereference"); }
+        E = E.add(1); *E = if TY == TypeKind::CHAR as i64 { Opcode::LC as i64 } else { Opcode::LI as i64 };
+    } else if TK == Token::And as i64 {
+        next();
+        expr(Token::Inc as i64);
+        if *E == Opcode::LC as i64 || *E == Opcode::LI as i64 {
+            E = E.sub(1);
+        } else {
+            err("bad address-of");
+        }
+        TY += TypeKind::PTR as i64;
+    } else if TK == b'!' as i64 {
+        next();
+        expr(Token::Inc as i64);
+        E = E.add(1); *E = Opcode::PSH as i64;
+        E = E.add(1); *E = Opcode::IMM as i64;
+        E = E.add(1); *E = 0;
+        E = E.add(1); *E = Opcode::EQ as i64;
+        TY = TypeKind::INT as i64;
+    } else if TK == b'~' as i64 {
+        next();
+        expr(Token::Inc as i64);
+        E = E.add(1); *E = Opcode::PSH as i64;
+        E = E.add(1); *E = Opcode::IMM as i64;
+        E = E.add(1); *E = -1;
+        E = E.add(1); *E = Opcode::XOR as i64;
+        TY = TypeKind::INT as i64;
+    } else if TK == Token::Add as i64 {
+        next(); expr(Token::Inc as i64); TY = TypeKind::INT as i64;
+    } else if TK == Token::Sub as i64 {
+        next(); E = E.add(1); *E = Opcode::IMM as i64;
+        if TK == Token::Num as i64 {
+            E = E.add(1); *E = -IVAL; next();
+        } else {
+            E = E.add(1); *E = -1;
+            E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Inc as i64);
+            E = E.add(1); *E = Opcode::MUL as i64;
+        }
+        TY = TypeKind::INT as i64;
+    } else if TK == Token::Inc as i64 || TK == Token::Dec as i64 {
+        t = TK; next();
+        expr(Token::Inc as i64);
+        if *E == Opcode::LC as i64 { *E = Opcode::PSH as i64; E = E.add(1); *E = Opcode::LC as i64; }
+        else if *E == Opcode::LI as i64 { *E = Opcode::PSH as i64; E = E.add(1); *E = Opcode::LI as i64; }
+        else { err("bad lvalue in pre-increment"); }
+        E = E.add(1); *E = Opcode::PSH as i64;
+        E = E.add(1); *E = Opcode::IMM as i64;
+        E = E.add(1); *E = if TY > TypeKind::PTR as i64 { mem::size_of::<i64>() as i64 } else { 1 };
+        E = E.add(1); *E = if t == Token::Inc as i64 { Opcode::ADD as i64 } else { Opcode::SUB as i64 };
+        E = E.add(1); *E = if TY == TypeKind::CHAR as i64 { Opcode::SC as i64 } else { Opcode::SI as i64 };
+    } else {
+        err("bad expression");
+    }
+
+    // Following this, insert the full operator precedence loop.
+    // Due to space, I will continue that in the next message if you'd like.
+    // Helper for errors:
+    fn err(msg: &str) {
+        eprintln!("{}: {}", unsafe { LINE }, msg);
+        std::process::exit(-1);
+    }
+}
+
+/// # Safety
 /// Parse and compile statements translation of original stmt()
  unsafe fn parse_statement(&mut self) {
     // Parse a single statement

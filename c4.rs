@@ -451,14 +451,173 @@ unsafe fn expr(lev: i64) {
         err("bad expression");
     }
 
-    // Following this, insert the full operator precedence loop.
-    // Due to space, I will continue that in the next message if you'd like.
-    // Helper for errors:
-    fn err(msg: &str) {
-        eprintln!("{}: {}", unsafe { LINE }, msg);
-        std::process::exit(-1);
+        while TK >= lev {
+        t = TY;
+
+        if TK == Token::Assign as i64 {
+            next();
+            if *E == Opcode::LC as i64 || *E == Opcode::LI as i64 {
+                *E = Opcode::PSH as i64;
+            } else {
+                err("bad lvalue in assignment");
+            }
+            expr(Token::Assign as i64);
+            E = E.add(1);
+            *E = if t == TypeKind::CHAR as i64 { Opcode::SC as i64 } else { Opcode::SI as i64 };
+        } else if TK == Token::Cond as i64 {
+            next();
+            E = E.add(1); *E = Opcode::BZ as i64; d = E.add(1);
+            E = d;
+            expr(Token::Assign as i64);
+            if TK != b':' as i64 {
+                err("conditional missing colon");
+            }
+            next();
+            *d = (E.add(3)) as i64;
+            E = E.add(1); *E = Opcode::JMP as i64;
+            d = E.add(1);
+            expr(Token::Cond as i64);
+            *d = (E.add(1)) as i64;
+        } else if TK == Token::Lor as i64 {
+            next(); E = E.add(1); *E = Opcode::BNZ as i64; d = E.add(1);
+            expr(Token::Lan as i64); *d = (E.add(1)) as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Lan as i64 {
+            next(); E = E.add(1); *E = Opcode::BZ as i64; d = E.add(1);
+            expr(Token::Or as i64); *d = (E.add(1)) as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Or as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Xor as i64); E = E.add(1); *E = Opcode::OR as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Xor as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::And as i64); E = E.add(1); *E = Opcode::XOR as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::And as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Eq as i64); E = E.add(1); *E = Opcode::AND as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Eq as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Lt as i64); E = E.add(1); *E = Opcode::EQ as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Ne as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Lt as i64); E = E.add(1); *E = Opcode::NE as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Lt as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Shl as i64); E = E.add(1); *E = Opcode::LT as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Gt as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Shl as i64); E = E.add(1); *E = Opcode::GT as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Le as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Shl as i64); E = E.add(1); *E = Opcode::LE as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Ge as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Shl as i64); E = E.add(1); *E = Opcode::GE as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Shl as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Add as i64); E = E.add(1); *E = Opcode::SHL as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Shr as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Add as i64); E = E.add(1); *E = Opcode::SHR as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Add as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Mul as i64);
+            if t > TypeKind::PTR as i64 {
+                E = E.add(1); *E = Opcode::PSH as i64;
+                E = E.add(1); *E = Opcode::IMM as i64;
+                E = E.add(1); *E = mem::size_of::<i64>() as i64;
+                E = E.add(1); *E = Opcode::MUL as i64;
+            }
+            E = E.add(1); *E = Opcode::ADD as i64;
+        } else if TK == Token::Sub as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Mul as i64);
+            if t > TypeKind::PTR as i64 && t == TY {
+                E = E.add(1); *E = Opcode::SUB as i64;
+                E = E.add(1); *E = Opcode::PSH as i64;
+                E = E.add(1); *E = Opcode::IMM as i64;
+                E = E.add(1); *E = mem::size_of::<i64>() as i64;
+                E = E.add(1); *E = Opcode::DIV as i64;
+                TY = TypeKind::INT as i64;
+            } else if t > TypeKind::PTR as i64 {
+                E = E.add(1); *E = Opcode::PSH as i64;
+                E = E.add(1); *E = Opcode::IMM as i64;
+                E = E.add(1); *E = mem::size_of::<i64>() as i64;
+                E = E.add(1); *E = Opcode::MUL as i64;
+                E = E.add(1); *E = Opcode::SUB as i64;
+            } else {
+                E = E.add(1); *E = Opcode::SUB as i64;
+            }
+        } else if TK == Token::Mul as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Inc as i64); E = E.add(1); *E = Opcode::MUL as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Div as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Inc as i64); E = E.add(1); *E = Opcode::DIV as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Mod as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Inc as i64); E = E.add(1); *E = Opcode::MOD as i64;
+            TY = TypeKind::INT as i64;
+        } else if TK == Token::Inc as i64 || TK == Token::Dec as i64 {
+            if *E == Opcode::LC as i64 { *E = Opcode::PSH as i64; E = E.add(1); *E = Opcode::LC as i64; }
+            else if *E == Opcode::LI as i64 { *E = Opcode::PSH as i64; E = E.add(1); *E = Opcode::LI as i64; }
+            else { err("bad lvalue in post-increment"); }
+            E = E.add(1); *E = Opcode::PSH as i64;
+            E = E.add(1); *E = Opcode::IMM as i64;
+            E = E.add(1); *E = if TY > TypeKind::PTR as i64 { mem::size_of::<i64>() as i64 } else { 1 };
+            E = E.add(1); *E = if TK == Token::Inc as i64 { Opcode::ADD as i64 } else { Opcode::SUB as i64 };
+            E = E.add(1); *E = if TY == TypeKind::CHAR as i64 { Opcode::SC as i64 } else { Opcode::SI as i64 };
+            E = E.add(1); *E = Opcode::PSH as i64;
+            E = E.add(1); *E = Opcode::IMM as i64;
+            E = E.add(1); *E = if TY > TypeKind::PTR as i64 { mem::size_of::<i64>() as i64 } else { 1 };
+            E = E.add(1); *E = if TK == Token::Inc as i64 { Opcode::SUB as i64 } else { Opcode::ADD as i64 };
+            next();
+        } else if TK == Token::Brak as i64 {
+            next(); E = E.add(1); *E = Opcode::PSH as i64;
+            expr(Token::Assign as i64);
+            if TK != b']' as i64 { err("close bracket expected"); }
+            next();
+            if t > TypeKind::PTR as i64 {
+                E = E.add(1); *E = Opcode::PSH as i64;
+                E = E.add(1); *E = Opcode::IMM as i64;
+                E = E.add(1); *E = mem::size_of::<i64>() as i64;
+                E = E.add(1); *E = Opcode::MUL as i64;
+            } else if t < TypeKind::PTR as i64 {
+                err("pointer type expected");
+            }
+            E = E.add(1); *E = Opcode::ADD as i64;
+            TY = t - TypeKind::PTR as i64;
+            E = E.add(1); *E = if TY == TypeKind::CHAR as i64 { Opcode::LC as i64 } else { Opcode::LI as i64 };
+        } else {
+            eprintln!("{}: compiler error tk={}", LINE, TK);
+            std::process::exit(-1);
+        }
     }
+    /// Emits an error with the current line number and exits the compiler.
+#[inline(always)]
+fn err(msg: &str) {
+    unsafe {
+        eprintln!("{}: {}", LINE, msg);
+    }
+    std::process::exit(-1);
 }
+}
+
+
+
 
 /// # Safety
 /// Parse and compile statements translation of original stmt()

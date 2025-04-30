@@ -112,11 +112,29 @@ enum IdentField {
 /// Advances to the next token in the source input.
 ///
 /// This function implements a lexer that processes C4-compatible tokens.
+/// Performs lexical analysis, converting raw source bytes into tokens,
+/// and updates global state variables like `TK`, `IVAL`, and `ID`.
 /// It supports C-style comments, identifiers, numbers (decimal, octal, hex),
 /// character literals, strings, and all operators supported by the C4 grammar.
 ///
+/// - Handles keywords, identifiers, numeric constants, string literals, operators, and comments.
+/// - Implements hashing and lookup for identifiers in the symbol table.
+/// - Supports multiline token processing and debug output when `SRC` is set.
+///
 /// # Safety (a warning below function is unsafe)
 /// Relies on unsafe global pointer arithmetic for performance and C compatibility.
+/// This function uses `unsafe` because it directly manipulates raw pointers and
+/// global mutable state (`P`, `E`, `DATA`, etc.). It assumes:
+/// - `P` points to a valid, null-terminated source buffer.
+/// - `SYM` is initialized and large enough to hold symbols.
+/// - No thread safety is enforced.
+
+
+
+
+
+
+
 unsafe fn next() {
     let mut pp: *mut u8;
 
@@ -265,7 +283,7 @@ unsafe fn next() {
         match_op!(b'=', b'=', Token::Eq, Token::Assign);
         match_op!(b'+', b'+', Token::Inc, Token::Add);
         match_op!(b'-', b'-', Token::Dec, Token::Sub);
-        match_op!(b'!', b'=', Token::Ne, Token::Not); // Token::Not not defined but may be added
+        match_op!(b'!', b'=', Token::Ne, Token::Not); 
         match_op!(b'<', b'=', Token::Le, Token::Lt);
         match_op!(b'<', b'<', Token::Shl, Token::Lt);
         match_op!(b'>', b'=', Token::Ge, Token::Gt);
@@ -290,16 +308,26 @@ unsafe fn next() {
 /// This function emits VM opcodes into the code buffer (`e`) according to the
 /// expression grammar of the C4 language. It handles literals, function calls,
 /// unary/binary operators, pointer dereferencing, address-of, sizeof, etc.
+/// This is the heart of the C4 expression parser. It interprets literals, identifiers,
+/// function calls, unary and binary operators, pointer arithmetic, type casts, and array indexing.
 ///
 /// # Arguments
-/// * `lev` - The current precedence level.
+/// * `lev` - The current precedence level (used for climbing operator precedence).
 ///
 /// # Design Notes
 /// This matches C4's recursive `expr()` logic and uses manual pointer arithmetic.
 /// Types (`ty`) and emitted opcodes are tracked through global state.
+/// Emits bytecode instructions into the code buffer `E`.
+/// Maintains type information via global `TY`.
+/// Uses global token stream (via `TK`) and advances using `next()`.
 ///
 /// # Safety
 /// Uses `unsafe` due to heavy reliance on raw pointers and mutable global state.
+/// Relies on global state and pointer arithmetic for performance:
+/// - `E` must be a valid buffer for code emission.
+/// - `ID`, `SYM`, and `DATA` must be initialized correctly.
+/// - This function assumes a C4-compatible token stream is available.
+
 unsafe fn expr(lev: i64) {
     let mut t: i64;
     let mut d: *mut i64;

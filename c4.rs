@@ -237,4 +237,147 @@ unsafe fn next() {
     }
 }
 
+/// Parse and compile statements translation of original stmt()
+ unsafe fn parse_statement(&mut self) {
+    // Parse a single statement
+    if self.tk == Token::If as i32 {
+        // IF statement
+        self.next_token();
+        if self.tk != '(' as i32 {
+            println!("{}: missing opening parenthesis in if", self.line);
+            exit(1);
+        }
+
+        self.next_token();
+        self.expression(Token::Assign as i32); // Parse condition
+
+        if self.tk != ')' as i32 {
+            println!("{}: missing closing parenthesis in if", self.line);
+            exit(1);
+        }
+
+        self.next_token();
+
+        // Emit jump instruction for false condition
+        *self.e = Opcode::BZ as i32;
+        self.e = self.e.add(1);
+        let if_false = self.e; // Address to patch
+        self.e = self.e.add(1);
+
+        self.parse_statement(); // IF body
+
+        if self.tk == Token::Else as i32 {
+            // ELSE part
+            *if_false = (self.e as usize - self.mem_stack.as_ptr() as usize) as i32 / 4 + 1; // Skip to after ELSE
+
+            // Emit jump instruction for true condition (to skip ELSE)
+            *self.e = Opcode::JMP as i32;
+            self.e = self.e.add(1);
+            let if_exit = self.e; // Address to patch
+            self.e = self.e.add(1);
+
+            self.next_token();
+            self.parse_statement(); // ELSE body
+
+            *if_exit = (self.e as usize - self.mem_stack.as_ptr() as usize) as i32 / 4;
+        // Exit point
+        } else {
+            *if_false = (self.e as usize - self.mem_stack.as_ptr() as usize) as i32 / 4;
+            // No ELSE, just skip IF body
+        }
+    } else if self.tk == Token::While as i32 {
+        // WHILE statement
+        self.next_token();
+
+        // Save the start position of the condition
+        let while_start = (self.e as usize - self.mem_stack.as_ptr() as usize) as i32 / 4;
+
+        if self.tk != '(' as i32 {
+            println!("{}: missing opening parenthesis in while", self.line);
+            exit(1);
+        }
+
+        self.next_token();
+        self.expression(Token::Assign as i32); // Parse condition
+
+        if self.tk != ')' as i32 {
+            println!("{}: missing closing parenthesis in while", self.line);
+            exit(1);
+        }
+
+        self.next_token();
+
+        // Emit jump instruction for false condition
+        *self.e = Opcode::BZ as i32;
+        self.e = self.e.add(1);
+        let while_end = self.e; // Address to patch
+        self.e = self.e.add(1);
+
+        self.parse_statement(); // WHILE body
+
+        // Jump back to condition
+        *self.e = Opcode::JMP as i32;
+        self.e = self.e.add(1);
+        *self.e = while_start;
+        self.e = self.e.add(1);
+
+        *while_end = (self.e as usize - self.mem_stack.as_ptr() as usize) as i32 / 4;
+    // Exit point
+    } else if self.tk == Token::Return as i32 {
+        // RETURN statement
+        self.next_token();
+
+        if self.tk != ';' as i32 {
+            self.expression(Token::Assign as i32); // Return value
+            println!("Return statement with expression");
+        } else {
+            // Return 0 by default when no expression is provided
+            println!("Return statement with no expression, defaulting to 0");
+            *self.e = Opcode::IMM as i32;
+            self.e = self.e.add(1);
+            *self.e = 0;
+            self.e = self.e.add(1);
+        }
+
+        // Emit return instruction
+        *self.e = Opcode::LEV as i32;
+        self.e = self.e.add(1);
+        println!("Emitted LEV instruction for return");
+
+        if self.tk != ';' as i32 {
+            println!("{}: missing semicolon in return", self.line);
+            exit(1);
+        }
+
+        self.next_token();
+    } else if self.tk == '{' as i32 {
+        // Block statement
+        self.next_token();
+
+        while self.tk != '}' as i32 {
+            self.parse_statement();
+        }
+
+        self.next_token();
+    } else if self.tk == ';' as i32 {
+        // Empty statement
+        self.next_token();
+    } else {
+        // Expression statement
+        self.expression(Token::Assign as i32);
+
+        if self.tk != ';' as i32 {
+            println!("{}: missing semicolon", self.line);
+            exit(1);
+        }
+
+        self.next_token();
+
+        // For expression statements, we discard the value
+        *self.e = Opcode::ADJ as i32;
+        self.e = self.e.add(1);
+        *self.e = 1;
+        self.e = self.e.add(1);
+    }
+}
 

@@ -16,6 +16,7 @@
 
 
 mod c4;
+mod lib;
 
 use std::env;
 use std::fs;

@@ -16,7 +16,7 @@
 
 
 mod testsLexer;
-
+mod c4;
 
 use std::env;
 use std::fs;

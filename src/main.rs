@@ -14,7 +14,7 @@
 /// - All major components (`next`, `expr`, etc.) are `unsafe` due to raw pointer manipulation.
 /// - Proper encapsulation and memory-safe abstractions could be added in a future refactor.
 
-mod c4;
+
 mod testsLexer;
 
 

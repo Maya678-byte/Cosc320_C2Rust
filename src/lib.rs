@@ -39,15 +39,12 @@ pub enum Token {
     Inc,     // '++'
     Dec,     // '--'
     Brak,    // '[]'
-    // Add more as needed
+ 
 }
 
-// Dummy implementation for next_token; replace this with real tokenizer logic.
-pub unsafe fn next_token() {
-    // This is a stub for demonstration; you'll want to replace it with
-    // the real logic from your Rust translation of C4's `next()` function.
 
-    // Example for minimal tokenizer:
+pub unsafe fn next_token() {
+
     if !P.is_null() && *P != 0 {
         match *P as u8 {
             b' ' | b'\t' | b'\n' | b'\r' => {

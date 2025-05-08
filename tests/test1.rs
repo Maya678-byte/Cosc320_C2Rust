@@ -1,5 +1,5 @@
 //Test cases
-use __::*;
+use c4_rust_Al_Aweer::*;
 
     #[test]
     fn test_tokenizer_with_simple_if() {

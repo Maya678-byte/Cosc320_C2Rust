@@ -15,7 +15,7 @@
 /// - Proper encapsulation and memory-safe abstractions could be added in a future refactor.
 
 
-
+mod c4;
 
 use std::env;
 use std::fs;

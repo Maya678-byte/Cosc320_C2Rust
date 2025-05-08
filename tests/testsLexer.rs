@@ -1,3 +1,4 @@
+use c4_rust_Al_Aweer::*;
 #[test]
 fn test_lexer_basic_keywords() {
     use std::ptr;
